@@ -1,0 +1,85 @@
+# Cloud-oriented Compose (Railway, Render, VPS). Use with managed Postgres or the db service below.
+services:
+  db:
+    image: postgres:17
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lyra}
+      POSTGRES_USER: ${POSTGRES_USER:-lyra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lyra} -d ${POSTGRES_DB:-lyra}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    restart: always
+    environment:
+      _JAVA_OPTIONS: -Xmx1G
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: ${SERVER_PORT:-2333}
+      LAVALINK_SERVER_PASSWORD: ${LAVALINK_SERVER_PASSWORD:?set LAVALINK_SERVER_PASSWORD}
+      LOGGING_LEVEL_ROOT: ${LOGGING_LEVEL_ROOT:-WARN}
+      LOGGING_LEVEL_LAVALINK: ${LOGGING_LEVEL_LAVALINK:-WARN}
+      PLUGINS_YOUTUBE_OAUTH_ENABLED: ${PLUGINS_YOUTUBE_OAUTH_ENABLED:-false}
+      PLUGINS_LAVASRC_SOURCES_SPOTIFY: ${PLUGINS_LAVASRC_SOURCES_SPOTIFY:-false}
+      PLUGINS_LAVASRC_SOURCES_DEEZER: ${PLUGINS_LAVASRC_SOURCES_DEEZER:-false}
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - lavalink-plugins:/opt/Lavalink/plugins
+    networks:
+      - private
+    expose:
+      - "2333"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "-H",
+          "Authorization: ${LAVALINK_SERVER_PASSWORD}",
+          "http://localhost:2333/version",
+        ]
+      interval: 30s
+      start_period: 60s
+      timeout: 10s
+      retries: 5
+
+  lyra:
+    build:
+      context: .
+      args:
+        DOCKER_BUILD_TYPE: release
+    restart: always
+    environment:
+      SQLX_OFFLINE: "true"
+      BOT_TOKEN: ${BOT_TOKEN:?set BOT_TOKEN}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      SERVER_ADDRESS: lavalink
+      SERVER_PORT: ${SERVER_PORT:-2333}
+      LAVALINK_SERVER_PASSWORD: ${LAVALINK_SERVER_PASSWORD:?set LAVALINK_SERVER_PASSWORD}
+      PLUGINS_LAVASRC_SOURCES_DEEZER: ${PLUGINS_LAVASRC_SOURCES_DEEZER:-false}
+      PLUGINS_LAVASRC_SOURCES_SPOTIFY: ${PLUGINS_LAVASRC_SOURCES_SPOTIFY:-false}
+      PLUGINS_YOUTUBE_OAUTH_ENABLED: ${PLUGINS_YOUTUBE_OAUTH_ENABLED:-false}
+      RUST_BACKTRACE: ${RUST_BACKTRACE:-0}
+    depends_on:
+      lavalink:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - private
+
+networks:
+  private:
+
+volumes:
+  pgdata:
+  lavalink-plugins:
