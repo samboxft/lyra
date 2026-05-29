@@ -58,8 +58,7 @@ function Ensure-EnvFile {
     Get-Content ".env" | ForEach-Object {
         if ($_ -match '^\s*([^#][^=]+)=(.*)$') {
             $name = $matches[1].Trim()
-            $value = $matches[2].Trim()
-            if ($value -match '^"(.*)"$') { $value = $matches[1] }
+            $value = $matches[2].Trim().Trim('"').Trim("'")
             [Environment]::SetEnvironmentVariable($name, $value, 'Process')
         }
     }
@@ -181,10 +180,9 @@ if ($NoRun) {
     exit 0
 }
 
-if ($env:BOT_TOKEN -eq "REPLACE_WITH_YOUR_DISCORD_BOT_TOKEN" -or [string]::IsNullOrWhiteSpace($env:BOT_TOKEN)) {
-    Write-Warning "Set BOT_TOKEN in .env before running the bot."
+if ($env:BOT_TOKEN -match 'REPLACE_WITH' -or [string]::IsNullOrWhiteSpace($env:BOT_TOKEN)) {
+    Write-Warning "Set BOT_TOKEN in .env (.\scripts\set-bot-token.ps1), then run .\scripts\start-lyra.ps1"
     exit 1
 }
 
-Write-Host "Starting Lyra..."
-& "target\release\lyra.exe"
+& (Join-Path $PSScriptRoot "start-lyra.ps1")

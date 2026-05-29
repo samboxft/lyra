@@ -62,6 +62,18 @@ use crate::{
     },
 };
 
+const SEARCH_PREFIXES: &[&str] = &[
+    "ytsearch:", "ytmsearch:", "scsearch:", "dzsearch:", "dzisrc:", "spsearch:",
+];
+
+fn format_play_query(query: &str, source: PlaySource) -> Box<str> {
+    if regex::URL.is_match(query) || SEARCH_PREFIXES.iter().any(|p| query.starts_with(p)) {
+        query.into()
+    } else {
+        format!("{}:{}", source.value(), query).into()
+    }
+}
+
 struct LoadTrackContext {
     guild_id: Id<GuildMarker>,
     lavalink: LavalinkClient,
@@ -100,9 +112,16 @@ impl LoadTrackContext {
                 TrackLoadType::Playlist => {
                     Ok(LoadTrackResult::Playlist(Playlist::new(loaded, query)))
                 }
-                TrackLoadType::Search => Err(LoadTrackProcessManyError::Query(
-                    QueryError::SearchResult(query),
-                )),
+                TrackLoadType::Search => {
+                    let Some(TrackLoadData::Search(tracks)) = loaded.data else {
+                        panic!("loaded search missing search load data")
+                    };
+                    if let Some(track) = tracks.into_iter().next() {
+                        Ok(LoadTrackResult::Track(track))
+                    } else {
+                        Err(LoadTrackProcessManyError::Query(QueryError::NoMatches(query)))
+                    }
+                }
                 TrackLoadType::Empty => Err(LoadTrackProcessManyError::Query(
                     QueryError::NoMatches(query),
                 )),
@@ -241,14 +260,7 @@ impl BotGuildAutocomplete for Autocomplete {
             AutocompleteValue::Focused(q) => Some(q),
             _ => None,
         })
-        .map(|q| {
-            let source = self.source.unwrap_or_default();
-            if regex::URL.is_match(&q) {
-                q.into_boxed_str()
-            } else {
-                format!("{}:{}", source.value(), q).into_boxed_str()
-            }
-        })
+        .map(|q| format_play_query(&q, self.source.unwrap_or_default()))
         .expect("exactly one autocomplete option should be focused");
 
         let guild_id = ctx.guild_id();
@@ -338,13 +350,20 @@ async fn play(
                         .await?;
                     Ok(())
                 }
-                QueryError::SearchResult(query) | QueryError::NoMatches(query) => {
-                    ctx.wrng_f(
-                        format!(
-                            "**Given query is not a URL: `{query}`**; Use the command's autocomplete to search for tracks instead. \n\
-                            -# If the autocomplete results are empty, try using a different search query.",
-                        ),
-                    ).await?;
+                QueryError::NoMatches(query) => {
+                    ctx.wrng_f(format!(
+                        "**No matches found for:** `{query}`\n\
+                        -# Try a different query, pick a result from autocomplete, or pass a direct link.",
+                    ))
+                    .await?;
+                    Ok(())
+                }
+                QueryError::SearchResult(query) => {
+                    ctx.wrng_f(format!(
+                        "**Could not resolve:** `{query}`\n\
+                        -# Pick a track from autocomplete or pass a direct link.",
+                    ))
+                    .await?;
                     Ok(())
                 }
             },
@@ -457,11 +476,12 @@ pub struct Play {
     query_5: Option<String>,
     /// Search from where? (if not given, Youtube)
     #[command(rename = "source")]
-    _source: Option<PlaySource>,
+    source: Option<PlaySource>,
 }
 
 impl BotGuildSlashCommand for Play {
     async fn run(self, mut ctx: GuildSlashCmdCtx) -> CommandResult {
+        let source = self.source.unwrap_or_default();
         let queries = [
             Some(self.query),
             self.query_2,
@@ -471,7 +491,7 @@ impl BotGuildSlashCommand for Play {
         ]
         .into_iter()
         .flatten()
-        .map(String::into_boxed_str);
+        .map(|q| format_play_query(&q, source));
 
         Ok(play(&mut ctx, queries).await?)
     }

@@ -106,6 +106,18 @@ $ devenv up -D
 
 ---
 
+### Windows (PowerShell)
+
+For local development on Windows without Docker:
+
+1. Copy config: `cp .env.example .env` and set `BOT_TOKEN` (or run `.\scripts\set-bot-token.ps1`).
+2. One-time full setup (build, Postgres, Lavalink): `.\scripts\setup-windows.ps1`
+3. Day-to-day start: `.\scripts\start-lyra.ps1`
+
+Requires Rust, VS 2022 C++ build tools, JDK 21+, and a built `target\release\lyra.exe` (`.\scripts\build.ps1` or `cargo build --release`).
+
+---
+
 ### Manual Setup (Not Recommended)
 
 To set up manually, install:
