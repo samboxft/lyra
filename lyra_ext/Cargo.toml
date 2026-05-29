@@ -1,0 +1,41 @@
+[package]
+name = "lyra_ext"
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+heck.workspace = true
+bitflags.workspace = true
+regex.workspace = true
+rayon.workspace = true
+unicode-segmentation = "1"
+
+[dev-dependencies]
+const-str.workspace = true
+rstest = "0.26.1"
+mock_instant = "0.6.0"
+hexf = "0.2.1"
+
+[dependencies.kmeans_colors]
+version = "0.7.1"
+features = ["palette_color"]
+default-features = false
+
+[dependencies.image]
+version = "0.25.8"
+features = ["jpeg", "png", "gif", "tiff"]
+default-features = false
+
+[dependencies.palette]
+version = "0.7.6"
+features = ["std"]
+default-features = false
+
+[dependencies.time]
+version = "0.3.44"
+features = ["formatting"]
+default-features = false
