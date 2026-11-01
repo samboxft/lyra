@@ -1,0 +1,37 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d --build",
+  "secrets": [
+    {
+      "name": "BOT_TOKEN",
+      "description": "Discord bot token from the Discord Developer Portal (Bot → Reset Token). Required for the bot to log in to Discord; a placeholder in .env.base44-defaults only lets the stack boot.",
+      "requiredAtBoot": true
+    },
+    {
+      "name": "PLUGINS_LAVASRC_SPOTIFY_CLIENT_ID",
+      "description": "Optional — Spotify app client id, only needed to play Spotify links (LavaSrc).",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PLUGINS_LAVASRC_SPOTIFY_CLIENT_SECRET",
+      "description": "Optional — Spotify app client secret, only needed to play Spotify links (LavaSrc).",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PLUGINS_LAVASRC_DEEZER_ARL",
+      "description": "Optional — Deezer ARL cookie, only needed to play Deezer links (LavaSrc).",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PLUGINS_LAVASRC_DEEZER_MASTER_DECRYPTION_KEY",
+      "description": "Optional — Deezer master decryption key, only needed to play Deezer links (LavaSrc).",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PLUGINS_YOUTUBE_OAUTH_REFRESH_TOKEN",
+      "description": "Optional — YouTube OAuth refresh token, used to avoid YouTube bot detection (Lavalink YouTube plugin).",
+      "requiredAtBoot": false
+    }
+  ]
+}

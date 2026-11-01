@@ -1,0 +1,154 @@
+# Base44 development stack.
+#
+# Runs the bot from the cloned source (bind mount + `cargo build`), not from a
+# prebuilt image, so edits in the repo are what the container executes.
+#
+#   docker compose -f docker-compose.base44.yml up -d --build
+#
+# Port 3000 serves base44/status/server.py: a read-only status page for the bot,
+# because the bot itself is a headless Discord client with no HTTP interface.
+
+name: lyra
+
+services:
+  db:
+    image: postgres:17
+    restart: on-failure
+    environment:
+      POSTGRES_DB: lyra
+      POSTGRES_USER: lyra
+      POSTGRES_PASSWORD: lyra_dev_pg_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lyra -d lyra"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Lavalink runs as uid 322 and downloads its plugins into /opt/Lavalink/plugins.
+  # A fresh named volume is root-owned, so hand it over once before it starts.
+  lavalink-plugins-init:
+    image: alpine:3.20
+    restart: "no"
+    command: ["sh", "-c", "mkdir -p /opt/Lavalink/plugins && chown -R 322:322 /opt/Lavalink/plugins"]
+    volumes:
+      - lavalink-plugins:/opt/Lavalink/plugins
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    restart: on-failure
+    environment:
+      _JAVA_OPTIONS: -Xmx1G
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: "2333"
+      LAVALINK_SERVER_PASSWORD: lyra_dev_lavalink_password
+      LOGGING_LEVEL_ROOT: WARN
+      LOGGING_LEVEL_LAVALINK: WARN
+      PLUGINS_YOUTUBE_OAUTH_ENABLED: "false"
+      PLUGINS_LAVASRC_SOURCES_SPOTIFY: "false"
+      PLUGINS_LAVASRC_SOURCES_DEEZER: "false"
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - lavalink-plugins:/opt/Lavalink/plugins
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "-H",
+          "Authorization: lyra_dev_lavalink_password",
+          "http://localhost:2333/version",
+        ]
+      interval: 10s
+      start_period: 60s
+      timeout: 10s
+      retries: 12
+    depends_on:
+      lavalink-plugins-init:
+        condition: service_completed_successfully
+
+  lyra:
+    image: rust:1.90-bookworm
+    working_dir: /app
+    restart: on-failure
+    environment:
+      SQLX_OFFLINE: "true"
+      DATABASE_URL: postgres://lyra:lyra_dev_pg_password@db:5432/lyra
+      SERVER_ADDRESS: lavalink
+      SERVER_PORT: "2333"
+      LAVALINK_SERVER_PASSWORD: lyra_dev_lavalink_password
+      RUST_BACKTRACE: "1"
+    env_file:
+      # Placeholders first, platform-delivered secrets last (they must win).
+      - ./.env.base44-defaults
+      - /run/base44/app.env
+    volumes:
+      - .:/app
+      - lyra-target:/app/target
+      - lyra-logs:/var/log/lyra
+    # No live-reload for a Rust binary: rebuild then run. The log is reset per
+    # run and the heartbeat is written only while the bot binary itself is alive.
+    command:
+      - bash
+      - -ec
+      - |
+        cargo build --locked
+        : > /var/log/lyra/lyra.log
+        echo "running $$(date +%s)" > /var/log/lyra/state
+        ./target/debug/lyra > >(tee -a /var/log/lyra/lyra.log) &
+        bot=$$!
+        while kill -0 $$bot 2>/dev/null; do date +%s > /var/log/lyra/heartbeat; sleep 5; done
+        wait $$bot || code=$$?
+        echo "exited:$${code:-0} $$(date +%s)" > /var/log/lyra/state
+        exit $${code:-0}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "for p in /proc/[0-9]*/exe; do case \"$$(readlink $$p 2>/dev/null)\" in */target/debug/lyra) exit 0;; esac; done; echo 'lyra process is not running'; exit 1",
+        ]
+      interval: 10s
+      start_period: 240s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      db:
+        condition: service_healthy
+      lavalink:
+        condition: service_healthy
+
+  status:
+    image: python:3.12-slim
+    restart: on-failure
+    labels:
+      base44.project: "Lyra — bot status"
+      base44.kind: web
+      base44.port: "3000"
+    environment:
+      LAVALINK_URL: http://lavalink:2333
+      LAVALINK_PASSWORD: lyra_dev_lavalink_password
+      DB_HOST: db
+      DB_PORT: "5432"
+      LOG_PATH: /var/log/lyra/lyra.log
+      HEARTBEAT_PATH: /var/log/lyra/heartbeat
+      STATE_PATH: /var/log/lyra/state
+    volumes:
+      - ./base44/status:/app/status:ro
+      - lyra-logs:/var/log/lyra:ro
+    command: ["python3", "-u", "/app/status/server.py"]
+    ports:
+      - "3000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz',timeout=3)\""]
+      interval: 10s
+      start_period: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  lavalink-plugins:
+  lyra-target:
+  lyra-logs:
